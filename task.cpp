@@ -1,236 +1,378 @@
-// copyright leonid perlin 2021
-
 #include <iostream>
-#include <string>
 #include <vector>
+#include <cassert>
+#include <functional>
+#include <queue>
+#include <set>
 
-#define HASHING_VALUE_FIRST 11
-#define HASHING_VALUE_SECOND 13
+struct IGraph {
+    virtual ~IGraph() {};
 
-#define START_SIZE 8
-#define FILL_REHASH_PERCENTAGE 0.75
+    virtual void AddEdge(int from, int to) = 0;
 
-#define OP_SUCCESS 0
-#define OP_FAILURE 1
+    virtual int VerticesCount() const  = 0;
 
-template <class T>
-uint64_t createHashFirstAlg(const T& keys_array, int size) {
-  uint64_t hash = 0;
-  for (int i = keys_array.size(); i >= 0; i--) {
-    hash += (HASHING_VALUE_FIRST * hash + keys_array[i]) % size;
-  }
-  return hash % size;
-}
-
-template <class T>
-uint64_t createHashSecondAlg(const T& keys_array, int size) {
-  uint64_t hash = 0;
-  for (int i = keys_array.size(); i >= 0; i--) {
-    hash += (HASHING_VALUE_SECOND * hash + keys_array[i]) % size;
-  }
-  return (hash * 2 + 1) % size;
-}
-
-template <class T>
-class hashTableItem {
- private:
-  T key;
-  bool existsVal;
-
- public:
-  explicit hashTableItem(const T& value) : key(value), existsVal(false) {}
-
-  const T& getKey() const;
-
-  void setKey(const T& key_value);
-
-  bool exists() const;
-
-  void deleteEX();
-
-  void added();
+    virtual std::vector<int> GetNextVertices(int vertex) const = 0;
+    virtual std::vector<int> GetPrevVertices(int vertex) const = 0;
 };
 
-template <class T>
-const T& hashTableItem<T>::getKey() const {
-  return key;
-}
 
-template <class T>
-void hashTableItem<T>::setKey(const T& key_value) {
-  key = key_value;
-}
 
-template <class T>
-bool hashTableItem<T>::exists() const {
-  return existsVal;
-}
+class ListGraph: public IGraph {
+public:
+    ListGraph(int size): adjacencyLists(size) {};
 
-template <class T>
-void hashTableItem<T>::deleteEX() {
-  existsVal = true;
-}
-
-template <class T>
-void hashTableItem<T>::added() {
-  existsVal = false;
-}
-
-template <class T>
-class Hash_table {
- private:
-  std::vector<hashTableItem<T>*> buffer;
-  int bufSiz;
-  int size;
-
-  void rehashTable();
-
- public:
-  Hash_table() : buffer(START_SIZE, NULL), bufSiz(START_SIZE), size(0) {}
-
-  ~Hash_table() {
-    for (int i = 0; i < buffer.size(); i++) {
-      delete buffer[i];
-    }
-  }
-  uint8_t add(const T& key_value);
-  uint8_t remove(const T& key_value);
-  uint8_t contains(const T& key_value) const;
-};
-
-template <class T>
-void Hash_table<T>::rehashTable() {
-  int new_bufSiz = bufSiz * 2;
-    std::vector<hashTableItem<T>*> new_buffer(new_bufSiz, NULL);
-    for (int i = 0; i < bufSiz; i++) {
-      if (buffer[i] != NULL &&
-          !buffer[i]
-               ->exists())  
-      {
-        int h1 = createHashFirstAlg(buffer[i]->getKey(), new_bufSiz);
-        int h2 = createHashSecondAlg(buffer[i]->getKey(), new_bufSiz);
-        int k = 0;
-        while (new_buffer[h1] != NULL &&
-               k < new_bufSiz) 
-        {
-          h1 = (h1 + h2) % new_bufSiz;
-          k++;
+    ListGraph(const IGraph &graph) : adjacencyLists(graph.VerticesCount()) {
+        for (int i = 0; i < graph.VerticesCount(); i++) {
+            adjacencyLists[i] = graph.GetNextVertices(i);
         }
-        new_buffer[h1] = buffer[i];
-      } else  
-      {
-        delete buffer[i];
-      }
-      buffer[i] = NULL;
+    };
+
+    ~ListGraph() {};
+
+    void AddEdge(int from, int to) override {
+        assert(0 <= from && from < adjacencyLists.size());
+        assert(0 <= to && to < adjacencyLists.size());
+        adjacencyLists[from].push_back(to);
     }
-    buffer = new_buffer;
-    bufSiz = new_bufSiz;
+
+    int VerticesCount() const override {
+        return (int)adjacencyLists.size();
+    }
+
+    std::vector<int> GetNextVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencyLists.size());
+        return adjacencyLists[vertex];
+    }
+
+    std::vector<int> GetPrevVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencyLists.size());
+        std::vector<int> prevVertices;
+
+        for (int from = 0; from < adjacencyLists.size(); from++) {
+            for (int to: adjacencyLists[from]) {
+                if (to == vertex) {
+                    prevVertices.push_back(from);
+                }
+            }
+        }
+
+        return prevVertices;
+    }
+
+private:
+    std::vector<std::vector<int>> adjacencyLists;
+};
+
+
+
+class MatrixGraph: public IGraph {
+public:
+    MatrixGraph(size_t size): adjacencyMatrix(size) {};
+
+    ~MatrixGraph() {};
+
+    MatrixGraph(const IGraph& graph): adjacencyMatrix(graph.VerticesCount()) {
+        for (auto i = 0; i < graph.VerticesCount(); i++) {
+            adjacencyMatrix[i].resize(graph.VerticesCount());
+            for (auto j = 0; j < graph.GetNextVertices(i).size(); j++) {
+                adjacencyMatrix[i][graph.GetNextVertices(i)[j]] = 1;
+            }
+        }
+    };
+
+    int VerticesCount() const override {
+        return adjacencyMatrix.size();
+    };
+
+    void AddEdge(int from, int to) override {
+        assert(0 <= from && from < adjacencyMatrix.size());
+        assert(0 <= to && to < adjacencyMatrix.size());
+        adjacencyMatrix[from][to] = 1;
+    };
+
+    std::vector<int> GetNextVertices(int vertex) const override {
+        std::vector<int> vector(adjacencyMatrix[vertex].size());
+        for (int i = 0; i < adjacencyMatrix[vertex].size(); i++) {
+            if (adjacencyMatrix[vertex][i]) {
+                vector.push_back(i);
+            }
+        }
+        return vector;
+    };
+
+    std::vector<int> GetPrevVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencyMatrix.size());
+        std::vector<int> prevVertices;
+
+        for (int from = 0; from < adjacencyMatrix.size(); from++) {
+            for (int to: adjacencyMatrix[from]) {
+                if (to == vertex) {
+                    prevVertices.push_back(from);
+                }
+            }
+        }
+
+        return prevVertices;
+    };
+
+private:
+    std::vector<std::vector<int> > adjacencyMatrix;
+};
+
+
+
+class SetGraph: public IGraph {
+public:
+    SetGraph(size_t size): adjacencySet(size) {};
+
+    SetGraph(const IGraph& graph): adjacencySet(graph.VerticesCount()) {
+        for (auto i = 0; i < graph.VerticesCount(); i++) {
+            for (auto j = 0; j < graph.GetNextVertices(i).size(); j++) {
+                adjacencySet[i].insert(graph.GetNextVertices(i)[j]);
+            }
+        }
+    }
+
+    ~SetGraph() {};
+
+    void AddEdge(int from, int to) override {
+        assert(0 <= from && from < adjacencySet.size());
+        assert(0 <= to && to < adjacencySet.size());
+        adjacencySet[from].insert(to);
+    }
+
+    int VerticesCount() const override {
+        return (int)adjacencySet.size();
+    }
+
+    std::vector<int> GetNextVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencySet.size());
+        std::vector<int> to_return;
+
+        for (int i : adjacencySet[vertex]) {
+            to_return.push_back(i);
+        }
+
+        return to_return;
+    }
+
+    std::vector<int> GetPrevVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencySet.size());
+        std::vector<int> prevVertices;
+
+        for (int from = 0; from < adjacencySet.size(); from++) {
+            for (int to: adjacencySet[from]) {
+                if (to == vertex) {
+                    prevVertices.push_back(from);
+                }
+            }
+        }
+
+        return prevVertices;
+    }
+
+private:
+    std::vector<std::set<int> > adjacencySet;
+};
+
+
+
+class ArcGraph: public IGraph {
+public:
+    ArcGraph(size_t size): adjacencyPair(size) {};
+
+    ArcGraph(const IGraph& graph): adjacencyPair(graph.VerticesCount()) {
+        for (auto i = 0; i < graph.VerticesCount(); i++) {
+            for (int j = 0; j < graph.GetNextVertices(i).size(); j++) {
+                adjacencyPair[i] = std::make_pair(i, graph.GetNextVertices(i)[j]);
+            }
+        }
+    };
+
+    ~ArcGraph() {};
+
+    void AddEdge(int from, int to) override {
+        adjacencyPair[from] = std::make_pair(from, to);
+    }
+
+    int VerticesCount() const override {
+        return adjacencyPair.size();
+    }
+
+    std::vector<int> GetNextVertices(int vertex) const override {
+        std::vector<int> vector;
+        for (int i = 0; i < adjacencyPair.size(); i++) {
+            if (adjacencyPair[i].first == vertex) {
+                vector.push_back(adjacencyPair[i].second);
+            }
+        }
+        return vector;
+    };
+
+    std::vector<int> GetPrevVertices(int vertex) const override {
+        assert(0 <= vertex && vertex < adjacencyPair.size());
+        std::vector<int> prevVertices;
+
+        for (int from = 0; from < adjacencyPair.size(); from++) {
+            if (from == vertex) {
+                prevVertices.push_back(adjacencyPair[from].second);
+            }
+        }
+
+        return prevVertices;
+    };
+
+private:
+    std::vector<std::pair<int, int> > adjacencyPair;
+};
+
+
+
+void BFS(const IGraph &graph, int vertex, std::vector<bool> &visited, std::function<void(int)> &func) {
+    std::queue<int> qu;
+    qu.push(vertex);
+    visited[vertex] = true;
+
+    while (!qu.empty()) {
+        int currentVertex = qu.front();
+        qu.pop();
+
+        func(currentVertex);
+
+        for (int nextVertex: graph.GetNextVertices(currentVertex)) {
+            if (!visited[nextVertex]) {
+                visited[nextVertex] = true;
+                qu.push(nextVertex);
+            }
+        }
+    }
 }
 
-template <class T>
-uint8_t Hash_table<T>::add(const T& key_value) {
-  if (((double)size / (double)bufSiz) >=
-        FILL_REHASH_PERCENTAGE)  
-    {
-      rehashTable();
-    }
-    int h1 = createHashFirstAlg(key_value, bufSiz);
-    int h2 = createHashSecondAlg(key_value, bufSiz);
-    int i = 0;
-    int first_deleted_elem = -1;
 
-    while (buffer[h1] != NULL && i < bufSiz) {
-      if (buffer[h1]->getKey() == key_value &&
-          !buffer[h1]->exists())  
-      {
-        return OP_FAILURE;
-      }
-      if (buffer[h1]->exists() &&
-          first_deleted_elem <
-              0)  
-      {
-        first_deleted_elem = h1;
-      }
-      h1 = (h1 + h2) % bufSiz;
-      i++;
-    }
 
-    if (first_deleted_elem < 0)  
-    {
-      buffer[h1] = new hashTableItem<T>(key_value);
-    } else  
-    {
-      buffer[first_deleted_elem]->setKey(key_value);
-      buffer[first_deleted_elem]->added();
+void mainBFS(const IGraph &graph, std::function<void(int)> func) {
+    std::vector<bool> visited(graph.VerticesCount(), false);
+
+    for (int i = 0; i < graph.VerticesCount(); i++) {
+        if (!visited[i])
+            BFS(graph, i, visited, func);
     }
-    size++;
-    return OP_SUCCESS;
 }
 
-template <class T>
-uint8_t Hash_table<T>::remove(const T& key_value) {
-  int h1 = createHashFirstAlg(key_value, bufSiz);
-    int h2 = createHashSecondAlg(key_value, bufSiz);
-    int i = 0;
-    while (buffer[h1] != NULL && i < bufSiz) {
-      if (buffer[h1]->getKey() == key_value &&
-          !buffer[h1]->exists()) 
-      {
-        buffer[h1]->deleteEX();
-        size--;
-        return OP_SUCCESS;
-      }
-      h1 = (h1 + h2) % bufSiz;
-      i++;
+void DFS(const IGraph &graph, int vertex, std::vector<bool> &visited, std::function<void(int)> &func) {
+    visited[vertex] = true;
+    func(vertex);
+
+    for (int nextVertex: graph.GetNextVertices(vertex)) {
+        if (!visited[nextVertex])
+            DFS(graph, nextVertex, visited, func);
     }
-    return OP_FAILURE; 
+
 }
 
-template <class T>
-uint8_t Hash_table<T>::contains(const T& key_value) const {
-  int h1 = createHashFirstAlg(key_value, bufSiz);
-    int h2 = createHashSecondAlg(key_value, bufSiz);
-    int i = 0;
-    while (buffer[h1] != NULL && i < bufSiz) {
-      if (buffer[h1]->getKey() == key_value &&
-          !buffer[h1]->exists())  //если нашли элемент
-      {
-        return OP_SUCCESS;
-      }
-      h1 = (h1 + h2) % bufSiz;
-      i++;
+void mainDFS(const IGraph &graph, std::function<void(int)> func) {
+    std::vector<bool> visited(graph.VerticesCount(), false);
+
+    for (int i = 0; i < graph.VerticesCount(); i++) {
+        if (!visited[i]) {
+            DFS(graph, i, visited, func);
+        }
     }
-    return OP_FAILURE;  
 }
 
+void topologicalSortInternal(const IGraph &graph, int vertex, std::vector<bool> &visited, std::deque<int> &sorted) {
+    visited[vertex] = true;
 
-int main() {
-  Hash_table<std::string> hm;
-  char command = ' ';
-  std::string key("");
-  uint8_t exitcode = false;
-
-  while (std::cin >> command >> key) {
-    switch (command) {
-      case '+':
-        exitcode = hm.add(key);
-        break;
-      case '?':
-        exitcode = hm.contains(key);
-        break;
-      case '-':
-        exitcode = hm.remove(key);
-        break;
-      default:
-        continue;
+    for (int nextVertex: graph.GetNextVertices(vertex)) {
+        if (!visited[nextVertex]) {
+            topologicalSortInternal(graph, nextVertex, visited, sorted);
+        }
     }
 
-    if (exitcode == OP_SUCCESS) {
-      std::cout << "OK" << std::endl;
-    } else if (exitcode == OP_FAILURE) {
-      std::cout << "FAIL" << std::endl;
-    }
-  }
+    sorted.push_front(vertex);
+}
 
-  return 0;
+std::deque<int> topologicalSort(const IGraph &graph) {
+    std::deque<int> sorted;
+    std::vector<bool> visited(graph.VerticesCount(), false);
+
+    for (int i = 0; i < graph.VerticesCount(); i++) {
+        if (!visited[i])
+            topologicalSortInternal(graph, i, visited, sorted);
+    }
+
+    return sorted;
+}
+
+int main(int argc, const char * argv[]) { // Test to check all methods
+    ListGraph listGraph(7); // Creating test graph
+    listGraph.AddEdge(0, 1);
+    listGraph.AddEdge(0, 5);
+    listGraph.AddEdge(1, 2);
+    listGraph.AddEdge(1, 3);
+    listGraph.AddEdge(1, 5);
+    listGraph.AddEdge(1, 6);
+    listGraph.AddEdge(3, 2);
+    listGraph.AddEdge(3, 4);
+    listGraph.AddEdge(3, 6);
+    listGraph.AddEdge(5, 4);
+    listGraph.AddEdge(5, 6);
+    listGraph.AddEdge(6, 4);
+
+    std::cout << "List Graph:" << std::endl;
+    mainBFS(listGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    mainDFS(listGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    for (int vertex: topologicalSort(listGraph)) {
+        std::cout << vertex << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Matrix Graph:" << std::endl;
+    MatrixGraph matrixGraph(listGraph);
+
+    mainBFS(matrixGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    mainDFS(matrixGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    for (int vertex: topologicalSort(matrixGraph)) {
+        std::cout << vertex << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Set Graph:" << std::endl;
+    SetGraph setGraph(matrixGraph);
+
+    mainBFS(setGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    mainDFS(setGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    for (int vertex: topologicalSort(setGraph)) {
+        std::cout << vertex << " ";
+    }
+    std::cout << std::endl;
+
+    std::cout << "Arc Graph:" << std::endl;
+    MatrixGraph arcGraph(setGraph);
+
+    mainBFS(arcGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    mainDFS(arcGraph, [](int vertex){ std::cout << vertex << " ";});
+    std::cout << std::endl;
+
+    for (int vertex: topologicalSort(arcGraph)) {
+        std::cout << vertex << " ";
+    }
+    std::cout << std::endl;
+
+    return 0;
 }
